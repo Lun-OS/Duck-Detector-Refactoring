@@ -27,6 +27,7 @@ public class SelinuxContextValidityPreload {
     private val sidtabProbe = SelinuxSidtabProbe()
     private val bridge = SelinuxContextValidityBridge()
     private val statusPageProbe = SelinuxStatusPageProbe()
+    private val statusAbiProbe = SelinuxStatusAbiProbe()
     private val procAttrCurrentProbe = SelinuxProcAttrCurrentProbe()
     private val avcLookupProbe = SelinuxAvcLookupProbe()
     private val policyloadSeqnoProbe = SelinuxPolicyloadSeqnoProbe()
@@ -42,6 +43,7 @@ public class SelinuxContextValidityPreload {
     ) {
         // Kept outside the try: a finished experiment's kernel side effects outlive a later failure.
         var sidtab = SelinuxSidtabSnapshot()
+        var statusAbi = SelinuxStatusAbiSnapshot()
         var procAttrResults: List<SelinuxProcAttrCurrentResult>? = null
         var avcLookup = SelinuxAvcLookupSnapshot()
         val payload = try {
@@ -52,6 +54,10 @@ public class SelinuxContextValidityPreload {
             trace("selinux: status page probe")
             val statusPage = statusPageProbe.inspect()
             val accessCheckBlockReason = statusPage.accessCheckBlockReason
+            // The conformance requests only mmap and mprotect the node in a disposable child and
+            // never dereference a granted mapping, so they stay safe before the access checks.
+            trace("selinux: status mmap ABI probe")
+            statusAbi = statusAbiProbe.inspect()
             // Direct I/O, isolated from libselinux and from any identity change in its child.
             trace("selinux: SID-table experiment")
             sidtab = if (currentUid == appInfo.uid) sidtabProbe.inspect() else SelinuxSidtabSnapshot(
@@ -59,7 +65,7 @@ public class SelinuxContextValidityPreload {
                 failureReason = "Carrier UID does not match the application UID.",
             )
             val baseSnapshot = collectBaseSnapshot(currentUid, appInfo.uid, accessCheckBlockReason, trace)
-                .copy(sidtab = sidtab)
+                .copy(sidtab = sidtab, statusAbi = statusAbi)
             var dirtyPolicyTraced = false
             val snapshot = augmentPreloadSnapshot(
                 baseSnapshot = baseSnapshot,
@@ -92,7 +98,13 @@ public class SelinuxContextValidityPreload {
             )
             SelinuxContextValidityPayloadCodec.encode(snapshot)
         } catch (throwable: Throwable) {
-            fallbackPayload(throwable.message ?: "SELinux app zygote preload failed.", sidtab, procAttrResults, avcLookup)
+            fallbackPayload(
+                throwable.message ?: "SELinux app zygote preload failed.",
+                sidtab,
+                statusAbi,
+                procAttrResults,
+                avcLookup,
+            )
         } finally {
             // The access checks above leave libselinux's AVC netlink socket open. Before Android 12,
             // AppZygoteInit does not exempt what doPreload opened, so the next fork of this app zygote
@@ -245,11 +257,13 @@ public class SelinuxContextValidityPreload {
     internal fun fallbackPayload(
         reason: String,
         sidtab: SelinuxSidtabSnapshot = SelinuxSidtabSnapshot(),
+        statusAbi: SelinuxStatusAbiSnapshot = SelinuxStatusAbiSnapshot(),
         procAttrResults: List<SelinuxProcAttrCurrentResult>? = null,
         avcLookup: SelinuxAvcLookupSnapshot = SelinuxAvcLookupSnapshot(),
     ): String {
         return SelinuxContextValidityPayloadCodec.encode(fallbackSnapshot(reason).copy(
             sidtab = sidtab,
+            statusAbi = statusAbi,
             procAttrCurrentProbeAttempted = procAttrResults != null,
             procAttrCurrentResults = procAttrResults.orEmpty(),
             avcLookup = avcLookup,
