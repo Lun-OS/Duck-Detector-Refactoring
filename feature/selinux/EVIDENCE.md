@@ -124,6 +124,17 @@ supercalls and manager inotify behavior do not close this coverage gap. Draft va
 record Android/API, kernel revision/configuration, ABI, enforcing state, hiding setting, raw control
 and candidate errors, child outcome and preload capture age on each stock/modified device.
 
+### Status mmap ABI conformance
+
+- Observable signal: whether the status node grants mmap/mprotect requests that stock selinuxfs rejects — a two-page mapping, a mapping at page offset 1, a writable private mapping, or an mprotect adding PROT_WRITE to the read-only baseline.
+- Producing subsystem: selinuxfs's `sel_mmap_handle_status`, reached through the selinuxpolicy capability's app_zygote carrier.
+- Mechanism: upstream checks the handler's inputs before remapping the status page — one page at offset 0, no VM_WRITE, and VM_MAYWRITE cleared after the mapping. A replaced handler that dropped any of those checks grants the corresponding request where stock answers EACCES, so each request asserts one upstream constraint from the kernel's own source behavior.
+- References: ACK [selinuxfs.c](https://android.googlesource.com/kernel/common/+/783025351c5fb3bcb4591d8fc61cbbd709aa4bcf/security/selinux/selinuxfs.c) (`sel_mmap_handle_status`, 4.19 and 5.10 share the same checks). Discovery only for [KernelPatch selinux_hide.c](https://github.com/bmax121/KernelPatch/blob/f36f3d1377004871f8c964f7cd3276712eeba943/kernel/patch/common/selinux_hide.c) (third-party upstream project, source review at the cited revision): its replacement handler keeps only an alignment check, so all four requests are granted there; this repository's probe is implemented from the upstream kernel behavior and copies no code from it.
+- Applicability: where the app_zygote carrier starts, on kernels whose page size makes the four requests reachable; request sizes and offsets are computed from the runtime page size.
+- Visibility limits: a status node that cannot be opened or mapped leaves the probe unavailable; a child that does not finish the request set is inconclusive. Neither is a negative result. A handler that keeps the upstream checks answers like stock, so "no violation observed" cannot exclude a hidden implementation, and other hiding mechanisms are unaffected by this signal.
+- Result states: ABI violation, no violation observed, unavailable, inconclusive.
+- Interpretation: an ABI violation is danger — it shows the status node's mmap handler does not enforce the upstream contract. "No violation observed" and all failure states stay informational method rows. The probe never dereferences a granted mapping, so a granted writable request is treated as detection evidence only.
+
 ## Known gaps
 
 - The policy notes pick their severity by matching the note text; see docs/architecture/follow-ups.md.
