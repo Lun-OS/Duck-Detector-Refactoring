@@ -26,6 +26,42 @@ class SelinuxStatusAbiProbeTest {
     private val probe = SelinuxStatusAbiProbe()
 
     @Test
+    fun `actual native violation payload survives carrier encoding`() {
+        val raw = requireNotNull(javaClass.getResource("/selinux-status-abi-violation.txt")).readText()
+        // test_status_abi_native.py compares this fixture to the actual JNI encoder output.
+        val result = probe.parse(raw)
+        assertEquals(SelinuxStatusAbiState.VIOLATION, result.state)
+        assertEquals(SelinuxStatusAbiRequestKind.entries, result.violatedRequests)
+        val carrier = SelinuxContextValiditySnapshot(statusAbi = result)
+        assertEquals(
+            result,
+            SelinuxContextValidityBridge().parse(SelinuxContextValidityPayloadCodec.encode(carrier)).statusAbi,
+        )
+    }
+
+    @Test
+    fun `actual partial native violation survives timeout and later preload failure`() {
+        val raw = requireNotNull(javaClass.getResource("/selinux-status-abi-partial.txt")).readText()
+        val result = probe.parse(raw)
+        assertEquals(SelinuxStatusAbiState.VIOLATION, result.state)
+        assertEquals(listOf(SelinuxStatusAbiRequestKind.TWO_PAGE_SHARED), result.violatedRequests)
+        assertEquals("Status ABI child did not finish within 1000 ms and was stopped.", result.failureReason)
+        assertEquals(3, result.notes.count { it.endsWith("has no reported outcome.") })
+        assertTrue(result.attempted)
+        val carrier = SelinuxContextValiditySnapshot(statusAbi = result)
+        assertEquals(
+            result,
+            SelinuxContextValidityBridge().parse(SelinuxContextValidityPayloadCodec.encode(carrier)).statusAbi,
+        )
+        assertEquals(
+            result,
+            SelinuxContextValidityBridge().parse(
+                SelinuxContextValidityPreload().fallbackPayload("later preload failure", statusAbi = result),
+            ).statusAbi,
+        )
+    }
+
+    @Test
     fun `a violation names the granted requests`() {
         val result = probe.parse(
             """

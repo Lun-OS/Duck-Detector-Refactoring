@@ -36,6 +36,19 @@ class SelinuxStatusAbiPresentationTest {
     private val mapper = SelinuxCardModelMapper()
 
     @Test
+    fun `a partial violation stays danger and shows the incomplete request reason`() {
+        val partial = statusAbiResult(SelinuxStatusAbiVerdict.ABI_VIOLATION, isSecure = false).copy(
+            details = "The status node granted requests stock selinuxfs rejects: writable private mmap. " +
+                "The request set did not finish: Status ABI child was killed by SIGSEGV.",
+        )
+        val model = mapper.map(baseReport(partial))
+        val row = model.methodRows.single { it.label == SelinuxOracle.STATUS_MMAP_ABI.label }
+        assertEquals(DetectorStatus.danger(), model.status)
+        assertEquals(DetectorStatus.danger(), row.status)
+        assertEquals(partial.details, row.detail)
+    }
+
+    @Test
     fun `an ABI violation is danger in the card status and its method row`() {
         val model = mapper.map(
             baseReport(statusAbiResult(verdict = SelinuxStatusAbiVerdict.ABI_VIOLATION, isSecure = false)),

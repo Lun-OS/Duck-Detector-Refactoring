@@ -100,7 +100,9 @@ namespace duckdetector::selinux {
                 return 0;
             }
 
-            void *baseline = mmap(nullptr, page, PROT_READ, MAP_SHARED, fd, 0);
+            // ACK mm/mmap.c clears VM_MAYWRITE for O_RDONLY + MAP_SHARED before the handler.
+            // MAP_PRIVATE preserves it, so only sel_mmap_handle_status clears it on stock.
+            void *baseline = mmap(nullptr, page, PROT_READ, MAP_PRIVATE, fd, 0);
             if (baseline == MAP_FAILED) {
                 const int error = errno;
                 close(fd);
@@ -112,7 +114,7 @@ namespace duckdetector::selinux {
             report.step = ChildStep::kBaselineMapped;
             send(report_fd, report);
 
-            // Request 1: two pages. Stock rejects the length with EACCES before remapping.
+            // Request 1: two pages. Stock rejects the length with EIO before remapping.
             void *mapping = mmap(nullptr, 2 * page, PROT_READ, MAP_SHARED, fd, 0);
             report.step = ChildStep::kRequest;
             report.request = static_cast<uint8_t>(StatusAbiRequest::kTwoPageShared);
@@ -133,7 +135,7 @@ namespace duckdetector::selinux {
             }
             send(report_fd, report);
 
-            // Request 3: writable private mapping. Stock rejects VM_WRITE before remapping.
+            // Request 3: writable private mapping. Stock rejects VM_WRITE with EPERM.
             mapping = mmap(nullptr, page, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
             report.request = static_cast<uint8_t>(StatusAbiRequest::kWritablePrivate);
             report.granted = mapping != MAP_FAILED ? 1 : 0;
@@ -205,7 +207,7 @@ namespace duckdetector::selinux {
                 if (result.request_error[index] < 0 && !result.granted[index]) {
                     result.notes.push_back(
                             std::string("Request ") + request_name(request) +
-                            " was not reached.");
+                            " has no reported outcome.");
                     continue;
                 }
                 if (result.granted[index]) {
@@ -263,29 +265,32 @@ namespace duckdetector::selinux {
                         break;
                 }
             }
-            if (!done) {
-                return result;
-            }
             bool any_granted = false;
             for (int index = 0; index < kStatusAbiRequestCount; ++index) {
                 any_granted = any_granted || result.granted[index];
             }
             add_request_notes(result);
-            result.outcome = any_granted ? StatusAbiOutcome::kViolation : StatusAbiOutcome::kNoViolation;
+            // One grant already proves a violation; later failure cannot invalidate that report.
+            // Only a completed negative request set can establish no violation observed.
+            if (any_granted) {
+                result.outcome = StatusAbiOutcome::kViolation;
+            } else if (done) {
+                result.outcome = StatusAbiOutcome::kNoViolation;
+            }
             if (any_granted) {
                 result.notes.emplace_back(
                         "Stock selinuxfs rejects every request above; a grant means the status "
                         "node's mmap handler dropped the corresponding upstream check.");
-            } else {
+            } else if (done) {
                 result.notes.emplace_back(
                         "Every nonconforming request was rejected like stock selinuxfs does.");
             }
             return result;
         }
 
-        StatusAbiProbeResult inconclusive(const common::ChildOutcome &child,
-                                          const std::vector<ChildReport> &reports,
-                                          const long page_size) {
+        StatusAbiProbeResult unfinished_result(const common::ChildOutcome &child,
+                                                const std::vector<ChildReport> &reports,
+                                                const long page_size) {
             StatusAbiProbeResult result = settle_from_reports(reports, page_size);
             result.attempted = child.end != common::ChildEnd::kNotStarted;
             // An open or baseline failure is settled, whoever ended the child: the request set was
@@ -296,45 +301,37 @@ namespace duckdetector::selinux {
             const std::string run_ms = std::to_string(kChildDeadlines.run.count());
             switch (child.end) {
                 case common::ChildEnd::kNotStarted:
-                    result.outcome = StatusAbiOutcome::kInconclusive;
                     result.failure_reason = "Status ABI child could not be started (errno=" +
                                             std::to_string(child.error) + "); conformance requests not sent.";
                     return result;
                 case common::ChildEnd::kSetupFailed:
-                    result.outcome = StatusAbiOutcome::kInconclusive;
                     result.failure_reason = "Status ABI child could not install its seccomp trap exit.";
                     return result;
                 case common::ChildEnd::kSeccompTrapped:
-                    result.outcome = StatusAbiOutcome::kInconclusive;
                     result.failure_reason = "Seccomp refused a status ABI syscall in the child.";
                     return result;
                 case common::ChildEnd::kSignaled:
-                    result.outcome = StatusAbiOutcome::kInconclusive;
                     result.failure_reason = "Status ABI child was killed by " +
                                             signal_name(child.signal) +
                                             " before it finished the request set.";
                     return result;
                 case common::ChildEnd::kTimedOut:
-                    result.outcome = StatusAbiOutcome::kInconclusive;
                     result.failure_reason = "Status ABI child did not finish within " + run_ms +
                                             " ms and was stopped.";
                     return result;
                 case common::ChildEnd::kNotReaped:
-                    result.outcome = StatusAbiOutcome::kInconclusive;
                     result.failure_reason = "Status ABI child did not finish within " + run_ms +
                                             " ms, and was left behind because it had not died " +
                                             std::to_string(kChildDeadlines.reap.count()) +
                                             " ms after it was stopped.";
                     return result;
                 case common::ChildEnd::kWaitFailed:
-                    result.outcome = StatusAbiOutcome::kInconclusive;
                     result.failure_reason = "waitpid failed (errno=" + std::to_string(child.error) +
-                                            "); status ABI outcome unknown.";
+                                            "); remaining status ABI requests are unevaluated.";
                     return result;
                 case common::ChildEnd::kExited:
                     break;
             }
-            result.outcome = StatusAbiOutcome::kInconclusive;
             result.failure_reason = "Status ABI child exited " +
                                     std::to_string(child.exit_status) +
                                     " without finishing the request set.";
@@ -363,7 +360,7 @@ namespace duckdetector::selinux {
             if (finished) {
                 return settle_from_reports(reports, page_size);
             }
-            return inconclusive(child, reports, page_size);
+            return unfinished_result(child, reports, page_size);
         }
 
     }  // namespace

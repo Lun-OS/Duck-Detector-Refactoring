@@ -58,7 +58,8 @@ private fun details(reading: SelinuxStatusAbiReading, failureReason: String?): S
     return when (reading.verdict) {
         SelinuxStatusAbiVerdict.ABI_VIOLATION ->
             "The status node granted requests stock selinuxfs rejects: " +
-                reading.violatedRequests.joinToString { it.label } + "."
+                reading.violatedRequests.joinToString { it.label } + "." +
+                failureReason?.let { " The request set did not finish: $it" }.orEmpty()
         SelinuxStatusAbiVerdict.NO_VIOLATION ->
             "Every nonconforming mmap/mprotect request to the status node was rejected, like stock " +
                 "selinuxfs. A handler that keeps the upstream checks answers the same way."

@@ -64,6 +64,7 @@ namespace {
         output << "ATTEMPTED=" << (result.attempted ? '1' : '0') << '\n';
         output << "OUTCOME=" << outcome_name(result.outcome) << '\n';
         if (result.outcome == StatusAbiOutcome::kViolation) {
+            output << "VIOLATED=";
             bool first = true;
             for (int index = 0; index < duckdetector::selinux::kStatusAbiRequestCount; ++index) {
                 if (!result.granted[index]) {

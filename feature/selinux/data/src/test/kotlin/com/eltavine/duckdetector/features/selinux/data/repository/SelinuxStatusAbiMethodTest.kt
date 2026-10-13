@@ -31,6 +31,26 @@ import org.junit.Test
 class SelinuxStatusAbiMethodTest {
 
     @Test
+    fun `a partial violation retains evidence and explains unfinished requests`() {
+        val result = buildStatusAbiMethod(
+            SelinuxStatusAbiSnapshot(
+                attempted = true,
+                state = SelinuxStatusAbiState.VIOLATION,
+                violatedRequests = listOf(SelinuxStatusAbiRequestKind.TWO_PAGE_SHARED),
+                failureReason = "Status ABI child did not finish within 1000 ms and was stopped.",
+                notes = listOf("Request OFFSET_SHARED has no reported outcome."),
+            ),
+        )
+        assertEquals(false, result.isSecure)
+        assertEquals(SelinuxStatusAbiVerdict.ABI_VIOLATION, result.statusAbi?.verdict)
+        assertEquals(listOf(SelinuxStatusAbiRequest.TWO_PAGE_SHARED), result.statusAbi?.violatedRequests)
+        assertEquals(listOf("Request OFFSET_SHARED has no reported outcome."), result.statusAbi?.notes)
+        assertTrue(result.details.orEmpty().contains("2-page shared mmap"))
+        assertTrue(result.details.orEmpty().contains("The request set did not finish"))
+        assertTrue(result.details.orEmpty().contains("1000 ms"))
+    }
+
+    @Test
     fun `a violation reads as insecure and lists the granted requests`() {
         val result = buildStatusAbiMethod(
             SelinuxStatusAbiSnapshot(

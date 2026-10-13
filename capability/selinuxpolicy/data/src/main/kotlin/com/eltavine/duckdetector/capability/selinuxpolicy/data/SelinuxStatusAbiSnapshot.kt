@@ -28,7 +28,7 @@ public enum class SelinuxStatusAbiState {
     /** The node could not be opened or the baseline mapping failed, so no request reached the handler. */
     UNAVAILABLE,
 
-    /** The child could not run or did not finish the request set, so the handler's answers are unknown. */
+    /** No grant was reported, but the child could not run or finish the request set. */
     INCONCLUSIVE,
 }
 
@@ -47,6 +47,7 @@ public data class SelinuxStatusAbiSnapshot(
     /** The requests the kernel granted, present when [state] is [SelinuxStatusAbiState.VIOLATION]. */
     val violatedRequests: List<SelinuxStatusAbiRequestKind> = emptyList(),
     val pageSize: Long? = null,
+    /** Also retained with VIOLATION when later child failure leaves other requests unevaluated. */
     val failureReason: String? = null,
     val notes: List<String> = emptyList(),
 )

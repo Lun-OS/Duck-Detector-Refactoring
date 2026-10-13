@@ -32,13 +32,13 @@ namespace duckdetector::selinux {
         // The node could not be opened or its baseline mapping could not be established, so no
         // conformance request reached the status handler.
         kUnavailable,
-        // The child could not run, ended before it finished the request set, or did not report,
-        // so the handler's behavior on the nonconforming requests is unknown.
+        // No grant was reported and the child could not run or finish the request set,
+        // so the handler's behavior on the remaining requests is unknown.
         kInconclusive,
     };
 
     // The four mmap/mprotect requests the upstream selinuxfs handler sel_mmap_handle_status
-    // rejects (kernel/common security/selinux/selinuxfs.c, 4.19 and 5.10): one page at offset 0,
+    // rejects (kernel/common security/selinux/selinuxfs.c, ACK 5.10 and 6.1): one page at offset 0,
     // read-only, with VM_MAYWRITE cleared after the mapping. Each request below breaks exactly one
     // of those constraints, so a handler that dropped the upstream checks answers differently.
     enum class StatusAbiRequest : uint8_t {
@@ -63,10 +63,11 @@ namespace duckdetector::selinux {
         bool attempted = false;
         StatusAbiOutcome outcome = StatusAbiOutcome::kInconclusive;
         // Per request: whether the kernel granted it, and the errno when it did not (-1 when the
-        // request was not reached).
+        // request has no reported outcome).
         bool granted[kStatusAbiRequestCount] = {false, false, false, false};
         int request_error[kStatusAbiRequestCount] = {-1, -1, -1, -1};
         long page_size = 0;
+        // A later child failure also accompanies kViolation when the request set is incomplete.
         std::string failure_reason;
         std::vector<std::string> notes;
     };
