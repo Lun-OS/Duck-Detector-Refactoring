@@ -30,6 +30,7 @@ set(DUCKDETECTOR_NATIVE_UNITS
     lsposed          feature/lsposed/data
     zygisk           feature/zygisk/data
     virtualization   capability/helperprocess/data
+    faultresidue     feature/faultresidue/data
 )
 
 cmake_path(SET repository_root NORMALIZE "${CMAKE_CURRENT_SOURCE_DIR}/../../../../..")

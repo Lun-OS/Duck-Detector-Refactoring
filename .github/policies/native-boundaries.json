@@ -162,6 +162,14 @@
       "may_include": [
         "common"
       ]
+    },
+    "faultresidue": {
+      "path": "faultresidue",
+      "owner": ":feature:faultresidue:data",
+      "target": "duckdetector_faultresidue",
+      "may_include": [
+        "common"
+      ]
     }
   },
   "include_exceptions": [

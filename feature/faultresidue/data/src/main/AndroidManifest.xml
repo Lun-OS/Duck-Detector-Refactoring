@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+Copyright 2026 Duck Apps Contributor
+If you have any questions, suggestions, or other inquiries, please email Eltavine <me@eltavine.com>.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+        Startup side effect only: the framework installs providers on the main thread after
+        Application.attachBaseContext and before Application.onCreate, which is the earliest point
+        a manifest-declared component can read the main thread's inherited kernel fault record.
+        The record lives in one per-thread slot that any later promoted exception overwrites, so
+        the reading has to be captured here rather than at scan time. Not exported and serving no
+        URI. A higher initOrder moves it ahead of providers that would otherwise run first.
+        -->
+        <provider
+            android:name="com.eltavine.duckdetector.features.faultresidue.data.early.FaultResidueSamplingProvider"
+            android:authorities="${applicationId}.faultresidue.sampler"
+            android:exported="false"
+            android:initOrder="1000" />
+    </application>
+
+</manifest>

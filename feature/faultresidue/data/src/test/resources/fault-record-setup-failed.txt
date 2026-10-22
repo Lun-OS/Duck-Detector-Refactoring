@@ -1,0 +1,6 @@
+AVAILABLE=0
+OUTCOME=SETUP_FAILED
+FAR=0
+ESR=0
+HAS_ESR=0
+NOTE=sigaction failed (errno=1)
